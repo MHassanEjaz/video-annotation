@@ -1,21 +1,18 @@
 import cv2
-import os
+from ultralytics import YOLO
 
 
 def annotate_video(input_path, output_path):
-    if not os.path.exists(input_path):
-        print(f"Error: Video not found: {input_path}")
-        return
+    # Load a pretrained CNN-based object detection model
+    model = YOLO("yolov8n.pt")
 
-    # Read the video
+    # Open the input video
     cap = cv2.VideoCapture(input_path)
 
     if not cap.isOpened():
-        print("Error: Could not open the video.")
-        cap.release()
+        print("Error: Could not open input video.")
         return
 
-    # Get video properties
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -23,12 +20,8 @@ def annotate_video(input_path, output_path):
     if fps <= 0:
         fps = 30.0
 
-    print(f"Video resolution: {width}x{height}")
-    print(f"Frames per second: {fps}")
-
-    # Configure the output video writer
+    # Configure the output video
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-
     writer = cv2.VideoWriter(
         output_path,
         fourcc,
@@ -43,48 +36,59 @@ def annotate_video(input_path, output_path):
 
     frame_count = 0
 
-    # Read and process the video frame by frame
-    try:
-        while True:
-            success, frame = cap.read()
+    # Process video frame by frame
+    while True:
+        success, frame = cap.read()
 
-            if not success:
-                break
+        if not success:
+            break
 
-            # Draw a green rectangle on every frame
-            x1, y1 = 50, 50
-            x2 = min(300, width - 1)
-            y2 = min(250, height - 1)
+        # Detect objects in the current frame
+        results = model(frame, conf=0.35, verbose=False)
 
-            cv2.rectangle(
-                frame,
-                (x1, y1),
-                (x2, y2),
-                (0, 255, 0),
-                2
-            )
+        # Draw detected object boxes and labels
+        for result in results:
+            for box in result.boxes:
+                x1, y1, x2, y2 = map(
+                    int, box.xyxy[0].tolist()
+                )
 
-            # Add text to every frame
-            cv2.putText(
-                frame,
-                "AI/ML Internship - Week 1",
-                (50, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 255),
-                2
-            )
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
 
-            # Save the annotated frame
-            writer.write(frame)
-            frame_count += 1
+                label = (
+                    f"{model.names[class_id]} "
+                    f"{confidence:.2f}"
+                )
 
-    finally:
-        # Release video resources
-        cap.release()
-        writer.release()
+                cv2.rectangle(
+                    frame,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 255, 0),
+                    2
+                )
 
-    print(f"Processing complete! Frames processed: {frame_count}")
+                cv2.putText(
+                    frame,
+                    label,
+                    (x1, max(y1 - 10, 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 255),
+                    2
+                )
+
+        writer.write(frame)
+        frame_count += 1
+
+        if frame_count % 30 == 0:
+            print(f"Processed {frame_count} frames")
+
+    cap.release()
+    writer.release()
+
+    print(f"Processing complete: {frame_count} frames")
     print(f"Output saved to: {output_path}")
 
 
